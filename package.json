@@ -1,30 +1,34 @@
 {
-  "name": "mock-builder-generator-cli",
-  "version": "0.1.0",
+  "name": "mock-builder-gen-cli",
+  "version": "0.1.1",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsup",
+    "publish": "npm run build && npm version patch && npm publish",
     "test": "jest --watch"
   },
   "bin": {
     "mbg": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [],
   "author": "Janik Kessler",
-  "license": "ISC",
+  "license": "MIT",
   "description": "Generates mock builders for TypeScript interfaces and types",
   "peerDependencies": {
     "@faker-js/faker": "^9.0.0"
   },
   "dependencies": {
+    "@faker-js/faker": "^9.0.0",
     "@inquirer/prompts": "^5.5.0",
     "change-case": "^5.4.4",
     "change-case-all": "^2.1.0",
     "inquirer-select-pro": "^1.0.0-alpha.7",
     "ts-morph": "^23.0.0",
     "typescript": "^5.6.2",
-    "yargs": "^17.7.2",
-    "@faker-js/faker": "^9.0.0"
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
