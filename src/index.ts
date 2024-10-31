@@ -20,6 +20,7 @@ async function run() {
         files: {
             alias: 'd',
             type: "string",
+            default: '.',
             description: 'directory'
         },
         dir: {
@@ -35,10 +36,7 @@ async function run() {
         default: 'merge',
     }) as 'overwrite' | 'merge';
 
-    const files = argv.files ?? await input({
-        message: 'In which directory do you want to search for files',
-        default: './examples/',
-    });
+    const files = argv.files ?? '.';
 
 
     const outputDirectory = argv.dir ?? await input({
