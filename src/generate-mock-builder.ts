@@ -1,25 +1,25 @@
-import {ClassDeclaration, InterfaceDeclaration, Project, SourceFile} from "ts-morph";
+import {ClassDeclaration, InterfaceDeclaration, Project, SourceFile, TypeLiteralNode} from "ts-morph";
 import {determinePrefix, erasePrefixFromMethod, getFakeValue, getSubTypeName} from "./helpers";
-import {InputArguments} from "./model";
+import {InputArguments, TypingDeclaration} from "./model";
+import {isInterfaceDeclaration, isTypeLiteralNode} from "./typeGuards";
 
-export async function generateMock(project: Project, sourceFile: SourceFile, interfaceName: string, args: InputArguments) {
+export async function generateMock(project: Project, sourceFile: SourceFile, typeName: string, args: InputArguments) {
     const filePath = sourceFile.getFilePath();
+    const baseInterface: TypingDeclaration = sourceFile.getInterface(typeName) ?? sourceFile.getTypeAlias(typeName);
 
-    const typeAliasOrInterface = sourceFile.getInterface(interfaceName);
-
-    if (!typeAliasOrInterface) {
-        console.error(`Type or Interface "${interfaceName}" not found in file ${filePath}`);
+    if (!baseInterface) {
+        console.error(`Type or Interface "${typeName}" not found in file ${filePath}`);
         process.exit(1);
     }
 
 
-    const outputFilePath = `${sourceFile.getDirectoryPath()}/${interfaceName}Builder.ts`;
+    const outputFilePath = `${sourceFile.getDirectoryPath()}/${typeName}Builder.ts`;
 
-    const outputFile = generateOutputFile(project, args.outputDirectory ? `${args.outputDirectory}/${interfaceName}Builder.ts` : outputFilePath);
-    const oldBuilderObject = outputFile.getClass(`${interfaceName}Builder`);
+    const outputFile = generateOutputFile(project, args.outputDirectory ? `${args.outputDirectory}/${typeName}Builder.ts` : outputFilePath);
+    const oldBuilderObject = outputFile.getClass(`${typeName}Builder`);
     const {nestedInterfaces} = args.updateMode === 'merge' ?
-        mergeMockBuilder(oldBuilderObject, typeAliasOrInterface) :
-        generateMockBuilder(outputFile, typeAliasOrInterface)
+        mergeMockBuilder(oldBuilderObject, baseInterface) :
+        generateMockBuilder(outputFile, baseInterface)
     outputFile.fixMissingImports();
     outputFile.formatText();
     await outputFile.save();
@@ -58,17 +58,109 @@ function isNotBuiltInType(type) {
     return !builtInTypes.includes(typeText);
 }
 
-function generateMockBuilder(outputFile: SourceFile, interfaceObject: InterfaceDeclaration): {
+function generateMockBuilder(outputFile: SourceFile, typeObject: TypingDeclaration): {
     nestedInterfaces: InterfaceDeclaration[]
 } {
     const nestedInterfaces = [];
-    const interfaceName = interfaceObject.getName();
+    const typeName = typeObject.getName();
     const newBuilderClass = outputFile.addClass({
-        name: `${interfaceName}Builder`,
+        name: `${typeName}Builder`,
         isExported: true,
     })
 
-    interfaceObject.getProperties().forEach(prop => {
+    if(isInterfaceDeclaration(typeObject)){
+        return buildMockBuilder(typeName, typeObject, newBuilderClass, nestedInterfaces)
+    } else {
+       const node = typeObject.getTypeNodeOrThrow()
+       if (isTypeLiteralNode(node)) {
+           return buildMockBuilder(typeName, node, newBuilderClass, nestedInterfaces)
+       }
+    }
+
+}
+
+function mergeMockBuilder(oldBuilderObject: ClassDeclaration, typeObject: TypingDeclaration): {
+    nestedInterfaces: InterfaceDeclaration[]
+} {
+    if(isInterfaceDeclaration(typeObject)) {
+        return mergingMockBuilder(typeObject.getName(), typeObject, oldBuilderObject)
+
+    } else {
+        const node = typeObject.getTypeNodeOrThrow()
+        if (isTypeLiteralNode(node)) {
+            return mergingMockBuilder(typeObject.getName(), node, oldBuilderObject)
+        }
+    }
+}
+
+function generateOutputFile(project: Project, outputFilePath: string): SourceFile {
+    const outputFile = project.getSourceFile(outputFilePath);
+    return outputFile ?? project.createSourceFile(outputFilePath, undefined, {overwrite: true});
+}
+
+function mergingMockBuilder(typeName: string, typeObject: InterfaceDeclaration | TypeLiteralNode, oldBuilderObject: ClassDeclaration){
+    const interfaceProperties = typeObject.getProperties().map(prop => prop.getName());
+    const oldBuilderProperties = oldBuilderObject.getProperties().map(prop => prop.getName());
+    if (!!oldBuilderObject.getDecorator('fixed')) return {nestedInterfaces: []};
+
+    typeObject.getProperties().forEach((prop, index) => {
+        if (oldBuilderObject.getProperty(prop.getName())) {
+            const oldProp = oldBuilderObject.getProperty(prop.getName());
+            const propFixed = !!oldProp.getDecorators().find(d => d.getName() === 'fixed');
+            if (!propFixed) {
+                oldProp.setType(getSubTypeName(prop.getType().getText()));
+                oldProp.setInitializer(getFakeValue(prop));
+            }
+        } else {
+            oldBuilderObject.addProperty({
+                name: prop.getName(),
+                type: getSubTypeName(prop.getType().getText()),
+                initializer: getFakeValue(prop),
+            }).setOrder(index);
+
+            oldBuilderObject.addMethod(
+                {
+                    name: determinePrefix(prop),
+                    parameters: [{name: 'value', type: getSubTypeName(prop.getType().getText())}],
+                    returnType: `${typeName}Builder`,
+                    statements: `this.${prop.getName()} = value
+                    return this;`,
+                }
+            ).setOrder(typeObject.getProperties().length + index);
+        }
+    })
+
+    oldBuilderObject.getProperties().forEach(prop => {
+        if (!interfaceProperties.includes(prop.getName())) {
+            prop.remove()
+        }
+    });
+
+
+    oldBuilderObject.getMethods()
+        .filter(method => method.getName() !== 'build')
+        .forEach(method => {
+            const methodName = method.getName();
+            const interfaceProp = typeObject.getProperty(erasePrefixFromMethod(methodName));
+            if (!interfaceProp) {
+                method.remove();
+            }
+        });
+
+    oldBuilderObject.getMethod('build').setBodyText(
+        `return {
+            ${typeObject.getProperties().map(prop => `${prop.getName()}: this.${prop.getName()}`).join(",\n")}
+        }`
+    )
+
+    return {nestedInterfaces: []};
+}
+
+function buildMockBuilder(typeName: string,
+                            typeObject: InterfaceDeclaration | TypeLiteralNode,
+                             newBuilderClass: ClassDeclaration,
+                             nestedInterfaces = [] ){
+    typeObject.getProperties().forEach(prop => {
         const propType = prop.getType();
         if (propType.isObject() && isNotBuiltInType(propType)) {
             const nestedInterface = propType.getSymbol().getDeclarations()[0];
@@ -76,8 +168,9 @@ function generateMockBuilder(outputFile: SourceFile, interfaceObject: InterfaceD
         }
     });
 
+
     newBuilderClass.addProperties(
-        interfaceObject.getProperties().map(prop => {
+        typeObject.getProperties().map(prop => {
                 return {
                     name: prop.getName(),
                     type: getSubTypeName(prop.getType().getText()),
@@ -89,11 +182,11 @@ function generateMockBuilder(outputFile: SourceFile, interfaceObject: InterfaceD
     );
 
     newBuilderClass.addMethods(
-        interfaceObject.getProperties().map(prop => {
+        typeObject.getProperties().map(prop => {
                 return {
                     name: determinePrefix(prop),
                     parameters: [{name: 'value', type: getSubTypeName(prop.getType().getText())}],
-                    returnType: `${interfaceName}Builder`,
+                    returnType: `${typeName}Builder`,
                     statements: `this.${prop.getName()} = value
                     return this;`,
                 }
@@ -102,80 +195,13 @@ function generateMockBuilder(outputFile: SourceFile, interfaceObject: InterfaceD
 
     newBuilderClass.addMethod({
         name: 'build',
-        returnType: interfaceName,
+        returnType: typeName,
         statements: `return {
-            ${interfaceObject.getProperties().map(prop => `${prop.getName()}: this.${prop.getName()}`).join(",\n")}
+            ${typeObject.getProperties().map(prop => `${prop.getName()}: this.${prop.getName()}`).join(",\n")}
         }`
     });
 
     return {
         nestedInterfaces,
     }
-}
-
-function mergeMockBuilder(oldBuilderObject: ClassDeclaration, interfaceObject: InterfaceDeclaration): {
-    nestedInterfaces: InterfaceDeclaration[]
-} {
-    const nestedInterfaces = [];
-    const interfaceProperties = interfaceObject.getProperties().map(prop => prop.getName());
-    const oldBuilderProperties = oldBuilderObject.getProperties().map(prop => prop.getName());
-    if(!!oldBuilderObject.getDecorator('fixed')) return { nestedInterfaces: []};
-
-    interfaceObject.getProperties().forEach((prop, index) => {
-       if(oldBuilderObject.getProperty(prop.getName())) {
-              const oldProp = oldBuilderObject.getProperty(prop.getName());
-              const propFixed = !!oldProp.getDecorators().find(d => d.getName() === 'fixed');
-              if (!propFixed) {
-                oldProp.setType(getSubTypeName(prop.getType().getText()));
-                oldProp.setInitializer(getFakeValue(prop));
-              }
-       } else {
-              oldBuilderObject.addProperty({
-                name: prop.getName(),
-                type: getSubTypeName(prop.getType().getText()),
-                initializer: getFakeValue(prop),
-              }).setOrder(index);
-
-              oldBuilderObject.addMethod(
-                  {
-                      name: determinePrefix(prop),
-                      parameters: [{name: 'value', type: getSubTypeName(prop.getType().getText())}],
-                      returnType: `${interfaceObject.getName()}Builder`,
-                      statements: `this.${prop.getName()} = value
-                    return this;`,
-                  }
-              ).setOrder(interfaceObject.getProperties().length + index);
-       }
-    })
-
-    oldBuilderObject.getProperties().forEach(prop => {
-        if (!interfaceProperties.includes(prop.getName())) {
-            prop.remove()
-        }
-    });
-
-
-
-    oldBuilderObject.getMethods()
-        .filter(method => method.getName() !== 'build')
-        .forEach(method => {
-            const methodName = method.getName();
-            const interfaceProp = interfaceObject.getProperty(erasePrefixFromMethod(methodName));
-            if (!interfaceProp) {
-                method.remove();
-            }
-        });
-
-    oldBuilderObject.getMethod('build').setBodyText(
-        `return {
-            ${interfaceObject.getProperties().map(prop => `${prop.getName()}: this.${prop.getName()}`).join(",\n")}
-        }`
-    )
-
-    return {nestedInterfaces: []};
-}
-
-function generateOutputFile(project: Project, outputFilePath: string): SourceFile {
-    const outputFile = project.getSourceFile(outputFilePath);
-    return outputFile ?? project.createSourceFile(outputFilePath, undefined, {overwrite: true});
 }
