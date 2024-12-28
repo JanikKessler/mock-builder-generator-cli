@@ -12,8 +12,8 @@ const program = new Command();
 
 program
     .name('mock-builder-generator-cli')
-    .description(packageInfo.description)
-    .version(packageInfo.version);
+    .description('packageInfo.description')
+    .version('0.2.12');
 
 program
     .command('generate')
