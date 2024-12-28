@@ -7,6 +7,10 @@
     "publish:npm": "npm run build && npm version patch && npm publish",
     "test": "jest --watch"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JanikKessler/mock-builder-generator-cli"
+  },
   "bin": {
     "mbg": "dist/index.js"
   },
