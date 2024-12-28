@@ -1,9 +1,14 @@
 import { Command } from 'commander';
 import {run} from "./generate-mock";
 import {Options} from "./model";
-const packageInfo = require('./package.json');
+import path from "node:path";
+import * as fs from "node:fs";
+
+const packageJsonPath = path.resolve(__dirname, 'package.json');
+const packageInfo = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
 const program = new Command();
+
 
 program
     .name('mock-builder-generator-cli')
