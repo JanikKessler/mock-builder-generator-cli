@@ -1,5 +1,5 @@
-import {ClassDeclaration, InterfaceDeclaration, Project, SourceFile, TypeLiteralNode} from "ts-morph";
-import {determinePrefix, erasePrefixFromMethod, getFakeValue, getSubTypeName} from "./helpers";
+import {ClassDeclaration, InterfaceDeclaration, Project, Scope, SourceFile, TypeLiteralNode} from "ts-morph";
+import {determinePrefix, erasePrefixFromMethod, getFakeValue, getSubTypeName, isNotBuiltInType} from "./helpers";
 import {InputArguments, TypingDeclaration} from "./model";
 import {isInterfaceDeclaration, isTypeLiteralNode} from "./typeGuards";
 
@@ -19,7 +19,7 @@ export async function generateMock(project: Project, sourceFile: SourceFile, typ
     const oldBuilderObject = outputFile.getClass(`${typeName}Builder`);
     const {nestedInterfaces} = args.updateMode === 'merge' ?
         mergeMockBuilder(oldBuilderObject, baseInterface) :
-        generateMockBuilder(outputFile, baseInterface)
+        generateMockBuilder(outputFile, baseInterface, oldBuilderObject)
     outputFile.fixMissingImports();
     outputFile.formatText();
     await outputFile.save();
@@ -27,70 +27,53 @@ export async function generateMock(project: Project, sourceFile: SourceFile, typ
     nestedInterfaces.forEach(nestedInterface => {
         generateMock(project, nestedInterface.getSourceFile(), nestedInterface.getName(), args);
     });
-
-    console.log(`Mock builder generated at: ${outputFilePath}`);
 }
 
-
-function getFixedProps(cls: ClassDeclaration): string[] {
-    return cls.getProperties().filter(prop => {
-        return prop.getDecorators().find(d => d.getName() === 'fixed');
-    }).map(prop => prop.getName());
-}
-
-
-// Helper function to check if a type is a built-in type
-function isNotBuiltInType(type) {
-    const typeText = type.getText();
-
-    // Built-in types to check against
-    const builtInTypes = [
-        "string", "number", "boolean", "bigint", "symbol", "undefined", "null",
-        "Date", "RegExp", "Array", "object", "any"
-    ];
-
-    // If it's an array type, it resolves to `Array<type>` in ts-morph
-    if (type.isArray()) {
-        return false;
-    }
-
-    // If the type text matches any of the built-in types
-    return !builtInTypes.includes(typeText);
-}
-
-function generateMockBuilder(outputFile: SourceFile, typeObject: TypingDeclaration): {
+function generateMockBuilder(outputFile: SourceFile, typeObject: TypingDeclaration, oldBuilderObject?: ClassDeclaration): {
     nestedInterfaces: InterfaceDeclaration[]
 } {
-    const nestedInterfaces = [];
+    //remove existing builder if present
+    if (oldBuilderObject !== undefined) {
+        oldBuilderObject.remove()
+    }
+
     const typeName = typeObject.getName();
     const newBuilderClass = outputFile.addClass({
         name: `${typeName}Builder`,
         isExported: true,
     })
-
-    if(isInterfaceDeclaration(typeObject)){
-        return buildMockBuilder(typeName, typeObject, newBuilderClass, nestedInterfaces)
-    } else {
-       const node = typeObject.getTypeNodeOrThrow()
-       if (isTypeLiteralNode(node)) {
-           return buildMockBuilder(typeName, node, newBuilderClass, nestedInterfaces)
-       }
-    }
-
+    console.log(`CREATED Mock builder at: ${newBuilderClass.getSourceFile().getFilePath()}`);
+    return processMockBuilder(typeObject, newBuilderClass, buildMockBuilder)
 }
 
 function mergeMockBuilder(oldBuilderObject: ClassDeclaration, typeObject: TypingDeclaration): {
     nestedInterfaces: InterfaceDeclaration[]
 } {
-    if(isInterfaceDeclaration(typeObject)) {
-        return mergingMockBuilder(typeObject.getName(), typeObject, oldBuilderObject)
+    console.log(`UPDATED Mock builder generated at: ${oldBuilderObject.getSourceFile().getFilePath()}`);
+    return processMockBuilder(typeObject, oldBuilderObject, mergingMockBuilder)
+}
 
+function processMockBuilder(
+    typeObject: TypingDeclaration,
+    builderObject: ClassDeclaration,
+    builderFunction: (
+        typeName: string,
+        typeNode: InterfaceDeclaration | TypeLiteralNode,
+        builderObject: ClassDeclaration,
+        nestedInterfaces: InterfaceDeclaration[]
+    ) => { nestedInterfaces: InterfaceDeclaration[] }
+): { nestedInterfaces: InterfaceDeclaration[] } {
+    const typeName = typeObject.getName();
+
+    if (isInterfaceDeclaration(typeObject)) {
+        return builderFunction(typeName, typeObject, builderObject, []);
     } else {
-        const node = typeObject.getTypeNodeOrThrow()
+        const node = typeObject.getTypeNodeOrThrow();
         if (isTypeLiteralNode(node)) {
-            return mergingMockBuilder(typeObject.getName(), node, oldBuilderObject)
+            return builderFunction(typeName, node, builderObject, []);
         }
     }
+    throw new Error("Unsupported typeObject format");
 }
 
 function generateOutputFile(project: Project, outputFilePath: string): SourceFile {
@@ -98,7 +81,7 @@ function generateOutputFile(project: Project, outputFilePath: string): SourceFil
     return outputFile ?? project.createSourceFile(outputFilePath, undefined, {overwrite: true});
 }
 
-function mergingMockBuilder(typeName: string, typeObject: InterfaceDeclaration | TypeLiteralNode, oldBuilderObject: ClassDeclaration){
+function mergingMockBuilder(typeName: string, typeObject: InterfaceDeclaration | TypeLiteralNode, oldBuilderObject: ClassDeclaration) {
     const interfaceProperties = typeObject.getProperties().map(prop => prop.getName());
     const oldBuilderProperties = oldBuilderObject.getProperties().map(prop => prop.getName());
     if (!!oldBuilderObject.getDecorator('fixed')) return {nestedInterfaces: []};
@@ -157,9 +140,10 @@ function mergingMockBuilder(typeName: string, typeObject: InterfaceDeclaration |
 }
 
 function buildMockBuilder(typeName: string,
-                            typeObject: InterfaceDeclaration | TypeLiteralNode,
-                             newBuilderClass: ClassDeclaration,
-                             nestedInterfaces = [] ){
+                          typeObject: InterfaceDeclaration | TypeLiteralNode,
+                          newBuilderClass: ClassDeclaration) {
+    const nestedInterfaces = []
+
     typeObject.getProperties().forEach(prop => {
         const propType = prop.getType();
         if (propType.isObject() && isNotBuiltInType(propType)) {
@@ -173,6 +157,7 @@ function buildMockBuilder(typeName: string,
         typeObject.getProperties().map(prop => {
                 return {
                     name: prop.getName(),
+                    scope: Scope.Private,
                     type: getSubTypeName(prop.getType().getText()),
                     initializer: `${getFakeValue(prop)}`,
                     hasQuestionToken: prop.hasQuestionToken(),

@@ -1,4 +1,4 @@
-import {PropertyDeclaration, PropertySignature} from "ts-morph";
+import {ClassDeclaration, PropertyDeclaration, PropertySignature, Type} from "ts-morph";
 import * as changeCase from "change-case-all";
 import {faker} from "@faker-js/faker";
 
@@ -27,4 +27,20 @@ export function getFakeValue(prop: PropertySignature | PropertyDeclaration): str
     } else {
         return 'null';
     }
+}
+
+
+export function isNotBuiltInType(type: Type) {
+    const typeText = type.getText();
+
+    const builtInTypes = [
+        "string", "number", "boolean", "bigint", "symbol", "undefined", "null",
+        "Date", "RegExp", "Array", "object", "any"
+    ];
+
+    if (type.isArray()) {
+        return false;
+    }
+
+    return !builtInTypes.includes(typeText);
 }

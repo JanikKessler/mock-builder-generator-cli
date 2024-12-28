@@ -1,5 +1,7 @@
-import {determinePrefix, erasePrefixFromMethod} from "./helpers";
-import {PropertySignature} from "ts-morph";
+import {determinePrefix, erasePrefixFromMethod, isNotBuiltInType} from "./helpers";
+import {PropertySignature, Type} from "ts-morph";
+import {type} from "node:os";
+import {typeMocks} from "../mocks/typeMocks";
 
 describe('helper', () => {
     describe('erasePrefixFromMethod', () => {
@@ -40,5 +42,15 @@ describe('helper', () => {
             const result = determinePrefix(mockProp);
             expect(result).toBe('isName');
         })
+    })
+
+    describe('isNotBuiltInType', () => {
+        typeMocks.forEach((input) => {
+            const text = typeof input.getText === 'function' ? input.getText() : 'No getText';
+            test(`returns false when input is ${text}`, () => {
+                const result = isNotBuiltInType(input);
+                expect(result).toBe(false);
+            });
+        });
     })
 })

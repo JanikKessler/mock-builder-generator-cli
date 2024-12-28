@@ -1,13 +1,14 @@
 import { Command } from 'commander';
 import {run} from "./generate-mock";
 import {Options} from "./model";
+const packageInfo = require('./package.json');
 
 const program = new Command();
 
 program
     .name('mock-builder-generator-cli')
-    .description('Generates mock builders for TypeScript interfaces and types')
-    .version('0.2.0');
+    .description(packageInfo.description)
+    .version(packageInfo.version);
 
 program
     .command('generate')
