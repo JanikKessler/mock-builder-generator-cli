@@ -3,7 +3,7 @@
   "version": "0.2.19",
   "main": "dist/index.js",
   "scripts": {
-    "postinstall": "node git-version.js",
+    "prepare": "node git-version.js",
     "build": "tsup",
     "publish:npm": "npm run build && npm version patch && npm publish",
     "test": "jest --watch"
