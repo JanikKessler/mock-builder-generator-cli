@@ -33,6 +33,7 @@ export function getFakeValue(prop: PropertySignature | PropertyDeclaration): str
 export function isNotBuiltInType(type: Type) {
     const typeText = type.getText();
 
+
     const builtInTypes = [
         "string", "number", "boolean", "bigint", "symbol", "undefined", "null",
         "Date", "RegExp", "Array", "object", "any"

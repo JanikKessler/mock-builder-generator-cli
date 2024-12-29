@@ -1,19 +1,15 @@
 import { Command } from 'commander';
 import {run} from "./generate-mock";
 import {Options} from "./model";
-import path from "node:path";
-import * as fs from "node:fs";
-
-const packageJsonPath = path.resolve(__dirname, 'package.json');
-const packageInfo = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+import {VERSION} from "./version/version";
 
 const program = new Command();
 
 
 program
     .name('mock-builder-generator-cli')
-    .description(packageInfo.description)
-    .version(packageInfo.version);
+    .description('')
+    .version(VERSION.version);
 
 program
     .command('generate')
