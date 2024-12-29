@@ -1,6 +1,6 @@
 {
   "name": "mock-builder-gen-cli",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "main": "dist/index.js",
   "scripts": {
     "prepare": "node git-version.js",
