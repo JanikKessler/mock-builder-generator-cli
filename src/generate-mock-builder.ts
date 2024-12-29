@@ -73,7 +73,6 @@ function processMockBuilder(
             return builderFunction(typeName, node, builderObject, []);
         }
     }
-    throw new Error("Unsupported typeObject format");
 }
 
 function generateOutputFile(project: Project, outputFilePath: string): SourceFile {
