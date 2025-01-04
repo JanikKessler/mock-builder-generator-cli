@@ -6,7 +6,7 @@ import yargs from "yargs";
 import {hideBin} from "yargs/helpers";
 import {Options, TypingDeclaration, UpdateMode} from "./model";
 
-export async function run(options: Options, updateMode: UpdateMode ) {
+export async function run(options: Options, updateMode: UpdateMode) {
 // CLI arguments
     const argv = yargs(hideBin(process.argv)).options({
         files: {
@@ -48,10 +48,11 @@ export async function run(options: Options, updateMode: UpdateMode ) {
 
     const project = new Project();
     const sourceFiles = project.addSourceFilesAtPaths(args.files.concat('/**/*.ts'));
+    const nestedTypesTempFile = project.createSourceFile('tmp.ts')
     const types: TypingDeclaration[] = sourceFiles.flatMap(sourceFile => [...sourceFile.getInterfaces(), ...sourceFile.getTypeAliases()]);
 
     let allInterfacesPrompt = true
-    if(options.interactive){
+    if (options.interactive) {
         allInterfacesPrompt = await select({
             message: 'Do you want to generate mock builders for all interfaces?',
             choices: [{name: 'Yes', value: true}, {name: 'No', value: false}],
@@ -78,17 +79,17 @@ export async function run(options: Options, updateMode: UpdateMode ) {
                 }));
             },
         });
-
-        selectedType.forEach(typeDeclaration => {
-                generateMock(project, typeDeclaration.getSourceFile(), typeDeclaration.getName(), args)
-            }
-        );
+        for(const typeDeclaration of selectedType) {
+            await generateMock(project, typeDeclaration.getSourceFile(), nestedTypesTempFile, typeDeclaration.getName(), args)
+        }
     } else {
-        sourceFiles.forEach(sourceFile => {
-                const types = [...sourceFile.getInterfaces(), ...sourceFile.getTypeAliases()]
-            types.forEach(typeDeclaration =>
-                    generateMock(project, sourceFile, typeDeclaration.getName(), args))
+        for(const sourceFile of sourceFiles) {
+            const types = [...sourceFile.getInterfaces(), ...sourceFile.getTypeAliases()];
+            for(const typeDeclaration of types) {
+                await generateMock(project, typeDeclaration.getSourceFile(), nestedTypesTempFile, typeDeclaration.getName(), args)
             }
-        );
+        }
     }
+
+    await nestedTypesTempFile.deleteImmediately();
 }

@@ -14,3 +14,8 @@ export interface Options {
 export type UpdateMode = 'overwrite' | 'merge'
 
 export type TypingDeclaration = InterfaceDeclaration | TypeAliasDeclaration
+
+export type NestedType = {
+    typeDeclaration: string,
+    interfaceDeclaration: InterfaceDeclaration,
+}
