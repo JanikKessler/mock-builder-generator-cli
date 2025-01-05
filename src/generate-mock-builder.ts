@@ -20,7 +20,6 @@ import {InputArguments, NestedType, TypingDeclaration} from "./model";
 import {isInterfaceDeclaration, isTypeAliasDeclaration, isTypeLiteralNode} from "./typeGuards";
 
 export async function generateMock(project: Project, sourceFile: SourceFile, nestedTypesTempFile: SourceFile, typeName: string, args: InputArguments, typeDeclaration?: string) {
-    console.log('generateMock started', typeName)
     const filePath = sourceFile.getFilePath();
     const baseInterface: TypingDeclaration = sourceFile.getInterface(typeName) ?? sourceFile.getTypeAlias(typeName);
 
@@ -35,19 +34,20 @@ export async function generateMock(project: Project, sourceFile: SourceFile, nes
     const outputFile = generateOutputFile(project, args.outputDirectory ? `${args.outputDirectory}/${typeName}Builder.ts` : outputFilePath);
     const oldBuilderObject = outputFile.getClass(`${typeName}Builder`);
 
-    const {nestedTypes} = await generateMockBuilder(outputFile, baseInterface, nestedTypesTempFile, typeDeclaration, oldBuilderObject)
-    for (const nestedType of nestedTypes){
-        console.log(nestedType)
-        await generateMock(project, nestedType.interfaceDeclaration.getSourceFile(), nestedTypesTempFile, nestedType.interfaceDeclaration.getName(), args, nestedType.typeDeclaration);
+    const {nestedTypes} = args.updateMode === 'merge' ?
+        await generateMockBuilder(outputFile, baseInterface, nestedTypesTempFile, typeDeclaration, oldBuilderObject) :
+        await generateMockBuilder(outputFile, baseInterface, nestedTypesTempFile, typeDeclaration, oldBuilderObject)
+
+    if (args.recursive) {
+        for (const nestedType of nestedTypes) {
+            await generateMock(project, nestedType.interfaceDeclaration.getSourceFile(), nestedTypesTempFile, nestedType.interfaceDeclaration.getName(), args, nestedType.typeDeclaration);
+        }
     }
 
-    await outputFile.fixMissingImports();
-    await outputFile.formatText();
+
+    outputFile.fixMissingImports();
+    outputFile.formatText();
     await outputFile.save();
-    console.log('generateMock ended', typeName);
-
-
-
 }
 
 async function generateMockBuilder(outputFile: SourceFile, typeObject: TypingDeclaration, nestedTypesTempFile: SourceFile, typeDeclaration?: string, oldBuilderObject?: ClassDeclaration): Promise<{
@@ -89,7 +89,6 @@ async function processMockBuilder(
     typeDeclaration?: string
 ): Promise<{ nestedTypes: NestedType[] }> {
     const typeName = typeObject.getName();
-
     if (isInterfaceDeclaration(typeObject)) {
         return await builderFunction(typeName, typeObject, builderObject, nestedTypesTempFile, typeDeclaration);
     } else if (isTypeAliasDeclaration(typeObject)) {
@@ -114,14 +113,17 @@ async function mergingMockBuilder(typeName: string,
                                   typeDeclaration?: string) {
     const interfaceProperties = typeObject.getProperties().map(prop => prop.getName());
     const oldBuilderProperties = oldBuilderObject.getProperties().map(prop => prop.getName());
-    if (!!oldBuilderObject.getDecorator('fixed')) return {nestedTypes: []};
+    // if (!!oldBuilderObject.getDecorator('fixed')) return {nestedTypes: []};
 
     typeObject.getProperties().forEach((prop, index) => {
         let propType = determinePropType(prop, oldBuilderObject)
         if (oldBuilderObject.getProperty(prop.getName())) {
             const oldProp = oldBuilderObject.getProperty(prop.getName());
-            const propFixed = !!oldProp.getDecorators().find(d => d.getName() === 'fixed');
-            if (!propFixed) {
+            const propFixedDefaultValue = !!oldProp.getDecorators().find(d => d.getName() === 'fixed');
+            const oldPropType = determinePropType(oldProp, oldBuilderObject);
+            const newPropType = determinePropType(prop, oldBuilderObject);
+            const propTypeChanged = oldPropType.getText() !== newPropType.getText();
+            if (!propFixedDefaultValue || propTypeChanged) {
                 oldProp.setType(getSubTypeName(propType.getText()));
                 oldProp.setInitializer(getFakeValue(propType));
             }
@@ -194,7 +196,7 @@ async function buildMockBuilder(typeName: string,
             nestedTypesTempFile.save()
             nestedTypesTempFile.fixMissingImports()
             nestedTypes.push({
-                typeDeclaration: getNestedTypeDeclaration(prop),
+                typeDeclaration: getNestedTypeDeclaration(prop, true),
                 interfaceDeclaration: newInterface
             });
         }
@@ -231,7 +233,6 @@ async function buildMockBuilder(typeName: string,
             }
         ));
 
-    console.log('decl', typeDeclaration)
     newBuilderClass.addMethod({
         name: 'build',
         returnType: typeDeclaration ?? typeName,

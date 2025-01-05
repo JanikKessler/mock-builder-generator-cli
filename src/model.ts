@@ -5,6 +5,7 @@ export interface InputArguments {
     updateMode: UpdateMode;
     outputDirectory: string | undefined;
     files: string;
+    recursive: boolean;
 }
 
 export interface Options {

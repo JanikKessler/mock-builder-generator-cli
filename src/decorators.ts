@@ -1,3 +1,3 @@
-export function fixed(target) {
-    console.log(target + " fixed");
+export function fixedDefaultValue(target) {
+    console.log(target + " fixed default value");
 }

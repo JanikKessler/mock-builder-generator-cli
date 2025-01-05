@@ -1,13 +1,12 @@
-import {input, select} from "@inquirer/prompts";
+import {input, select, confirm} from "@inquirer/prompts";
 import {select as multiselect} from "inquirer-select-pro"
 import {Project} from "ts-morph";
 import {generateMock} from "./generate-mock-builder";
 import yargs from "yargs";
 import {hideBin} from "yargs/helpers";
-import {Options, TypingDeclaration, UpdateMode} from "./model";
+import {InputArguments, Options, TypingDeclaration, UpdateMode} from "./model";
 
 export async function run(options: Options, updateMode: UpdateMode) {
-// CLI arguments
     const argv = yargs(hideBin(process.argv)).options({
         files: {
             alias: 'f',
@@ -19,11 +18,18 @@ export async function run(options: Options, updateMode: UpdateMode) {
             alias: 'd',
             type: "string",
             description: 'output directory'
+        },
+        recursive: {
+            alias: 'r',
+            type: "boolean",
+            default: true,
+            description: 'recursively generate builders'
         }
     }).parseSync()
 
     let files: string | null = argv.files
     let outputDirectory: string | null = argv.dir
+    let recursive: boolean = argv.recursive
 
 
     if (options.interactive) {
@@ -32,17 +38,22 @@ export async function run(options: Options, updateMode: UpdateMode) {
             default: '.',
         });
 
-
         outputDirectory = await input({
             message: 'In which directory do you want to save the mock builders',
             default: undefined,
         });
+
+        recursive = await confirm({
+            message: 'Do you want to generate mock builders recursively?',
+            default: true
+        });
     }
 
-    const args = {
+    const args: InputArguments = {
         updateMode,
         files,
-        outputDirectory
+        outputDirectory,
+        recursive
     }
 
 
