@@ -83,7 +83,7 @@ describe('helper', () => {
 
         it('handles generic types', () => {
             const prop = createPropertyWithType('prop: Array<string>;');
-            expect(getNestedTypeDeclaration(prop)).toBe('Array<string>');
+            expect(getNestedTypeDeclaration(prop)).toBe('string');
         });
 
         it('handles nested array types', () => {

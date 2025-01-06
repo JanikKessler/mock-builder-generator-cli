@@ -1,4 +1,14 @@
-import {ClassDeclaration, PropertySignature, ReferencedSymbol, Node, ts, Type, Symbol, TypeNode} from "ts-morph";
+import {
+    ClassDeclaration,
+    PropertySignature,
+    ReferencedSymbol,
+    Node,
+    ts,
+    Type,
+    Symbol,
+    TypeNode,
+    PropertyDeclaration
+} from "ts-morph";
 import * as changeCase from "change-case-all";
 import {faker} from "@faker-js/faker";
 import {isPropertySignature} from "./typeGuards";
@@ -7,7 +17,7 @@ export function getSubTypeName(subType: string) {
     return subType.split('.').pop();
 }
 
-export function determinePrefix(propType: Type, prop: PropertySignature) {
+export function determinePrefix(propType: Type, prop: PropertySignature | PropertyDeclaration) {
     const prefix = propType.isBoolean() ? `is` : "with";
     return prefix + changeCase.pascalCase(prop.getName());
 }
@@ -44,8 +54,8 @@ export function isNotBuiltInType(type: Type) {
     return !builtInTypes.includes(typeText);
 }
 
-export function determinePropType(prop: any, builderClass: ClassDeclaration) {
-    if (prop.getType == undefined) {
+export function determinePropType(prop: PropertySignature | Symbol, builderClass: ClassDeclaration): Type {
+    if (prop instanceof Symbol) {
         return prop.getTypeAtLocation(builderClass);
     } else {
         return prop.getType()

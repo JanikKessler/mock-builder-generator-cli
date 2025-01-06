@@ -34,8 +34,8 @@ export async function generateMock(project: Project, sourceFile: SourceFile, nes
     const outputFile = generateOutputFile(project, args.outputDirectory ? `${args.outputDirectory}/${typeName}Builder.ts` : outputFilePath);
     const oldBuilderObject = outputFile.getClass(`${typeName}Builder`);
 
-    const {nestedTypes} = args.updateMode === 'merge' ?
-        await generateMockBuilder(outputFile, baseInterface, nestedTypesTempFile, typeDeclaration, oldBuilderObject) :
+    const {nestedTypes} = args.updateMode === 'merge' && oldBuilderObject !== undefined ?
+        await mergeMockBuilder(oldBuilderObject, baseInterface, nestedTypesTempFile) :
         await generateMockBuilder(outputFile, baseInterface, nestedTypesTempFile, typeDeclaration, oldBuilderObject)
 
     if (args.recursive) {
@@ -113,19 +113,30 @@ async function mergingMockBuilder(typeName: string,
                                   typeDeclaration?: string) {
     const interfaceProperties = typeObject.getProperties().map(prop => prop.getName());
     const oldBuilderProperties = oldBuilderObject.getProperties().map(prop => prop.getName());
-    // if (!!oldBuilderObject.getDecorator('fixed')) return {nestedTypes: []};
+    const builderFixedDefaultValues = oldBuilderObject.getDecorator('fixedDefaultValue')
+    const oldBuilderMethods = oldBuilderObject.getMethods();
 
     typeObject.getProperties().forEach((prop, index) => {
         let propType = determinePropType(prop, oldBuilderObject)
         if (oldBuilderObject.getProperty(prop.getName())) {
             const oldProp = oldBuilderObject.getProperty(prop.getName());
-            const propFixedDefaultValue = !!oldProp.getDecorators().find(d => d.getName() === 'fixed');
-            const oldPropType = determinePropType(oldProp, oldBuilderObject);
+            const propFixedDefaultValue = !!oldProp.getDecorators().find(d => d.getName() === 'fixedDefaultValue');
+            const oldPropType = oldProp.getType();
             const newPropType = determinePropType(prop, oldBuilderObject);
             const propTypeChanged = oldPropType.getText() !== newPropType.getText();
-            if (!propFixedDefaultValue || propTypeChanged) {
-                oldProp.setType(getSubTypeName(propType.getText()));
+            if((propFixedDefaultValue || builderFixedDefaultValues) && propTypeChanged) {
+                oldProp.getDecorator('fixedDefaultValue').remove();
+            }
+
+            if (propTypeChanged) {
+                oldProp.setType(getNestedTypeDeclaration(prop));
                 oldProp.setInitializer(getFakeValue(propType));
+
+                const propSettingMethod = oldBuilderMethods.find(obm => obm.getName() === determinePrefix(oldPropType, oldProp))
+                if(propSettingMethod !== undefined) {
+                    propSettingMethod.rename(determinePrefix(propType, prop))
+                    propSettingMethod.getParameter('value').setType(propType.getText());
+                }
             }
         } else {
             oldBuilderObject.addProperty({
