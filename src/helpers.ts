@@ -45,12 +45,10 @@ export function getFakeValue(propType: Type): string {
 
 export function isNotBuiltInType(type: Type) {
     const typeText = type.getText();
-
     const builtInTypes = [
         "string", "number", "boolean", "bigint", "symbol", "undefined", "null",
         "Date", "RegExp", "object", "any"
     ];
-
     return !builtInTypes.includes(typeText);
 }
 

@@ -1,9 +1,9 @@
 import {
     ClassDeclaration,
     InterfaceDeclaration,
-    Project, PropertySignatureStructure, Scope,
+    Project, PropertySignature, PropertySignatureStructure, Scope,
     SourceFile,
-    StructureKind,
+    StructureKind, Symbol,
     Type,
     TypeLiteralNode
 } from "ts-morph";
@@ -91,7 +91,7 @@ async function processMockBuilder(
     const typeName = typeObject.getName();
     if (isInterfaceDeclaration(typeObject)) {
         return await builderFunction(typeName, typeObject, builderObject, nestedTypesTempFile, typeDeclaration);
-    } else if (isTypeAliasDeclaration(typeObject)) {
+    } else if (isTypeAliasDeclaration(typeObject) && isNotBuiltInType(typeObject.getType())) {
         const node = typeObject.getTypeNodeOrThrow();
         if (isTypeLiteralNode(node)) {
             return await builderFunction(typeName, node.getType(), builderObject, nestedTypesTempFile, typeDeclaration);
@@ -124,7 +124,7 @@ async function mergingMockBuilder(typeName: string,
             const oldPropType = oldProp.getType();
             const newPropType = determinePropType(prop, oldBuilderObject);
             const propTypeChanged = oldPropType.getText() !== newPropType.getText();
-            if((propFixedDefaultValue || builderFixedDefaultValues) && propTypeChanged) {
+            if ((propFixedDefaultValue || builderFixedDefaultValues) && propTypeChanged) {
                 oldProp.getDecorator('fixedDefaultValue').remove();
             }
 
@@ -133,7 +133,7 @@ async function mergingMockBuilder(typeName: string,
                 oldProp.setInitializer(getFakeValue(propType));
 
                 const propSettingMethod = oldBuilderMethods.find(obm => obm.getName() === determinePrefix(oldPropType, oldProp))
-                if(propSettingMethod !== undefined) {
+                if (propSettingMethod !== undefined) {
                     propSettingMethod.rename(determinePrefix(propType, prop))
                     propSettingMethod.getParameter('value').setType(propType.getText());
                 }
@@ -193,23 +193,12 @@ async function buildMockBuilder(typeName: string,
     typeObject.getProperties().forEach(prop => {
         const originalPropType = determinePropType(prop, newBuilderClass)
         let propType = originalPropType.isArray() ? originalPropType.getArrayElementTypeOrThrow() : originalPropType
-        if (isNotBuiltInType(propType) && propType !== null) {
-            const newInterface = nestedTypesTempFile.addInterface({
-                    name: getNestedTypeName(prop),
-                    isExported: true,
-                    properties: propType.getProperties().map((x): PropertySignatureStructure => ({
-                        name: x.getName(),
-                        kind: StructureKind.PropertySignature,
-                        type: getNestedTypeDeclaration(x),
-                    }))
-                }
-            )
-            nestedTypesTempFile.save()
-            nestedTypesTempFile.fixMissingImports()
-            nestedTypes.push({
-                typeDeclaration: getNestedTypeDeclaration(prop, true),
-                interfaceDeclaration: newInterface
-            });
+        if (propType.isUnion()) {
+            nestedTypes.push(...handleUnionType(nestedTypesTempFile, prop, propType))
+        } else if (propType.isIntersection()) {
+            nestedTypes.push(...handleIntersectionType(nestedTypesTempFile, prop, propType))
+        } else if (isNotBuiltInType(propType)) {
+            nestedTypes.push(createNestedInterface(nestedTypesTempFile, prop, propType))
         }
     });
 
@@ -254,5 +243,47 @@ async function buildMockBuilder(typeName: string,
 
     return {
         nestedTypes,
+    }
+}
+
+function handleUnionType(nestedTypesTempFile: SourceFile, prop: PropertySignature | Symbol, propType: Type): {
+    typeDeclaration: string,
+    interfaceDeclaration: InterfaceDeclaration
+}[] {
+    return propType.getUnionTypes().map(unionType => {
+        if (isNotBuiltInType(unionType) && isNotBuiltInType(propType)) {
+            return createNestedInterface(nestedTypesTempFile, prop, unionType)
+        }
+    }).filter(x => x !== undefined)
+}
+
+function handleIntersectionType(nestedTypesTempFile: SourceFile, prop: PropertySignature | Symbol, propType: Type): {
+    typeDeclaration: string,
+    interfaceDeclaration: InterfaceDeclaration
+}[] {
+    return propType.getIntersectionTypes().map(intesectionType => {
+        console.log(intesectionType)
+        if (isNotBuiltInType(intesectionType) && isNotBuiltInType(propType)) {
+            return createNestedInterface(nestedTypesTempFile, prop, intesectionType)
+        }
+    }).filter(x => x !== undefined)
+}
+
+function createNestedInterface(nestedTypesTempFile: SourceFile, prop: PropertySignature | Symbol, propType: Type) {
+    const newInterface = nestedTypesTempFile.addInterface({
+            name: getNestedTypeName(prop),
+            isExported: true,
+            properties: propType.getProperties().map((x): PropertySignatureStructure => ({
+                name: x.getName(),
+                kind: StructureKind.PropertySignature,
+                type: getNestedTypeDeclaration(x),
+            }))
+        }
+    )
+    nestedTypesTempFile.save()
+    nestedTypesTempFile.fixMissingImports()
+    return {
+        typeDeclaration: getNestedTypeDeclaration(prop, true),
+        interfaceDeclaration: newInterface
     }
 }

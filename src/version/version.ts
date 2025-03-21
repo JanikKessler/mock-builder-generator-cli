@@ -2,10 +2,10 @@
 /* tslint:disable */
 /* eslint-disable */
 export const VERSION = {
-    "dirty": false,
-    "raw": "v0.2.22-0-g7781aa5",
-    "hash": "g7781aa5",
-    "distance": 0,
+    "dirty": true,
+    "raw": "v0.2.22-1-gc2a7e63-dirty",
+    "hash": "gc2a7e63",
+    "distance": 1,
     "tag": "v0.2.22",
     "semver": {
         "options": {
@@ -21,8 +21,8 @@ export const VERSION = {
         "build": [],
         "version": "0.2.22"
     },
-    "suffix": "0-g7781aa5",
-    "semverString": "0.2.22",
+    "suffix": "1-gc2a7e63-dirty",
+    "semverString": "0.2.22+1.gc2a7e63",
     "version": "0.2.22"
 };
 /* tslint:enable */

@@ -4,6 +4,7 @@ import { InterfaceDeclaration, TypeAliasDeclaration } from "ts-morph";
 export interface InputArguments {
     updateMode: UpdateMode;
     outputDirectory: string | undefined;
+    tsConfig: string | undefined;
     files: string;
     recursive: boolean;
 }

@@ -29,6 +29,7 @@ export async function run(options: Options, updateMode: UpdateMode) {
 
     let files: string | null = argv.files
     let outputDirectory: string | null = argv.dir
+    let tsConfig: string | null = argv.dir
     let recursive: boolean = argv.recursive
 
 
@@ -43,6 +44,11 @@ export async function run(options: Options, updateMode: UpdateMode) {
             default: undefined,
         });
 
+        tsConfig = await input({
+            message: 'Where is your tsconfig.json located?',
+            default: undefined,
+        });
+
         recursive = await confirm({
             message: 'Do you want to generate mock builders recursively?',
             default: true
@@ -53,11 +59,12 @@ export async function run(options: Options, updateMode: UpdateMode) {
         updateMode,
         files,
         outputDirectory,
-        recursive
+        recursive,
+        tsConfig
     }
 
 
-    const project = new Project();
+    const project = new Project(tsConfig ? {tsConfigFilePath: tsConfig} : undefined);
     const sourceFiles = project.addSourceFilesAtPaths(args.files.concat('/**/*.ts'));
     const nestedTypesTempFile = project.createSourceFile('tmp.ts')
     const types: TypingDeclaration[] = sourceFiles.flatMap(sourceFile => [...sourceFile.getInterfaces(), ...sourceFile.getTypeAliases()]);
@@ -68,7 +75,7 @@ export async function run(options: Options, updateMode: UpdateMode) {
             message: 'Do you want to generate mock builders for all interfaces?',
             choices: [{name: 'Yes', value: true}, {name: 'No', value: false}],
             default: 'Yes'
-        });
+        }) as boolean;
     }
 
     if (!allInterfacesPrompt) {
